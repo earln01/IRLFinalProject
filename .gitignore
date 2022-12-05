@@ -1,0 +1,5 @@
+env/
+__pycache__/
+stockfish_15_win_x64_avx2/
+.git/
+*.db
