@@ -3,13 +3,11 @@ import asyncio
 import chess
 import chess.engine
 import chess.pgn
-import sqlite3
 import random
 import tensorflow as tf
 import numpy as np
 import random
 from trainEnv import ChessEnv
-
 
 asyncio.set_event_loop_policy(chess.engine.EventLoopPolicy())
 
@@ -19,7 +17,7 @@ class DQN:
 
     async def init(self) -> None:
         self.env = ChessEnv()
-        await self.env.init(20)
+        await self.env.init()
 
         ## TODO make this some sort of actual useful NN
         self.model = tf.keras.models.Sequential()

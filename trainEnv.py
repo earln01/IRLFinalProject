@@ -5,20 +5,52 @@ import chess.engine
 import chess.pgn
 import random
 import numpy as np
+import sqlite3
 
 SELF_DIR = os.path.dirname(os.path.realpath(__file__))
 ENGINE_PATH = os.path.join(SELF_DIR, 'stockfish_15_win_x64_avx2\stockfish_15_x64_avx2.exe')
 
+class ChessDB:
+    def __init__(self, pgnFile, dbName='chess.db'):
+        self.dbName = dbName
+        self.pgnFile = pgnFile
+        self.conn = sqlite3.connect(self.dbName)
+        self.cursor = self.conn.cursor()
+
+    def PGNtoDB(self, drop=False):
+        if drop:
+            self.cursor.execute('DROP TABLE IF EXISTS games')
+        self.cursor.execute('CREATE TABLE IF NOT EXISTS games ([result] TEXT, [positions] TEXT, [length] INT)')
+        insertCMD = "INSERT into games (result, positions, length) VALUES (?, ?, ?)"
+
+        with open(self.pgnFile) as f:
+            
+            while True:
+                pgn = chess.pgn.read_game(f)
+                if pgn is not None:
+                    positions = self.positionsFromMoves(pgn.mainline_moves())
+                    self.cursor.execute(insertCMD, (pgn.headers['Result'], str(positions), len(list(pgn.mainline_moves()))))
+                else:
+                    break
+        self.conn.commit()
+    
+    def positionsFromMoves(self, moves):
+        board = chess.Board()
+        positions=[]
+        for move in moves:
+            board.push(move)
+            positions.append(board.board_fen())
+        return positions
+
 class ChessEnv:
     def __init__(self):
-        return None
-
-    async def init(self, action_space) -> None:
-        self.transport, self.engine = await chess.engine.popen_uci(ENGINE_PATH)
         self.board = chess.Board()
-        self.action_space = action_space
         piece_types = ["P", "N", "B", "R", "Q", "K"]
         self.pieceVals = {piece_type: i+1 for i, piece_type in enumerate(piece_types)}
+
+
+    async def init(self) -> None:
+        self.transport, self.engine = await chess.engine.popen_uci(ENGINE_PATH)
     
     def reset(self):
         ## TODO start from a set opening
