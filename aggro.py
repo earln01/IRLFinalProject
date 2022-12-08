@@ -24,6 +24,7 @@ async def main() -> None:
         else:
             print('Black to move')
         topMoves = await engine.analyse(board, chess.engine.Limit(time=0.1) , multipv=3)
+        print(topMoves)
         for move in topMoves:
             candidates.append(move['pv'][0])
         nextMove = candidates[random.randint(0,2)]

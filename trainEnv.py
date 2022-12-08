@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import chess
 import chess.engine
@@ -11,25 +12,24 @@ SELF_DIR = os.path.dirname(os.path.realpath(__file__))
 ENGINE_PATH = os.path.join(SELF_DIR, 'stockfish_15_win_x64_avx2\stockfish_15_x64_avx2.exe')
 
 class ChessDB:
-    def __init__(self, pgnFile, dbName='chess.db'):
+    def __init__(self, dbName='chess.db'):
         self.dbName = dbName
-        self.pgnFile = pgnFile
         self.conn = sqlite3.connect(self.dbName)
-        self.cursor = self.conn.cursor()
 
-    def PGNtoDB(self, drop=False):
+    def PGNtoDB(self, pgnFile, drop=False):
+        cursor = self.conn.cursor()
         if drop:
-            self.cursor.execute('DROP TABLE IF EXISTS games')
-        self.cursor.execute('CREATE TABLE IF NOT EXISTS games ([result] TEXT, [positions] TEXT, [length] INT)')
+            cursor.execute('DROP TABLE IF EXISTS games')
+        cursor.execute('CREATE TABLE IF NOT EXISTS games ([result] TEXT, [positions] TEXT, [length] INT)')
         insertCMD = "INSERT into games (result, positions, length) VALUES (?, ?, ?)"
 
-        with open(self.pgnFile) as f:
+        with open(pgnFile) as f:
             
             while True:
                 pgn = chess.pgn.read_game(f)
                 if pgn is not None:
                     positions = self.positionsFromMoves(pgn.mainline_moves())
-                    self.cursor.execute(insertCMD, (pgn.headers['Result'], str(positions), len(list(pgn.mainline_moves()))))
+                    cursor.execute(insertCMD, (pgn.headers['Result'], str(positions), len(list(pgn.mainline_moves()))))
                 else:
                     break
         self.conn.commit()
@@ -41,20 +41,53 @@ class ChessDB:
             board.push(move)
             positions.append(board.board_fen())
         return positions
+    
+    def getMoveScore(self, pre_position, post_position, white=True):
+        winString = '1-0' if white else '0-1'
+        loseString = '0-1' if white else '1-0'
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM games WHERE positions LIKE ?", ("%" + pre_position + "', '" +  post_position + "%",))
+        score = 0
+        games = 0
+        
+        for row in cursor:
+            if row[0] == winString:
+                score += (100-row[2])
+            elif row[0] == loseString:
+                score -= (100 + row[2])
+            else:
+                score -= 100
+            games += 1
+        score = score/games if games >= 5 else -200
+        return score
+    
+    def getNumGames(self, position):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM games WHERE positions LIKE ?", ("%" + position + "%",))
+        return len(list(cursor)) 
+
+    def tearDown(self):
+        self.conn.close()       
 
 class ChessEnv:
-    def __init__(self):
+    def __init__(self, pgnFiles, openingMoves):
         self.board = chess.Board()
+        self.openingMoves = openingMoves
+        self.board.reset()
         piece_types = ["P", "N", "B", "R", "Q", "K"]
         self.pieceVals = {piece_type: i+1 for i, piece_type in enumerate(piece_types)}
-
+        self.chess_db = ChessDB()
+        for file in pgnFiles:
+            self.chess_db.PGNtoDB(file)
 
     async def init(self) -> None:
         self.transport, self.engine = await chess.engine.popen_uci(ENGINE_PATH)
     
     def reset(self):
-        ## TODO start from a set opening
-        self.board = chess.Board()
+        self.board.reset()
+        self.board.clear_stack()
+        for move in self.openingMoves:
+            self.board.push_san(move)
         return self.getState()
     
     def getState(self):
@@ -66,14 +99,31 @@ class ChessEnv:
         return arr
     
     async def getBestMoveandState(self):
-        ## TODO change this to reflect our best move method by searching database
-
-        bestMove = await self.engine.play(self.board, chess.engine.Limit(time=0.1))
-        bestMove = bestMove.move
-        self.board.push(bestMove)
-        state = self.getState()
-        self.board.pop()
-        return (bestMove, state)
+        if self.chess_db.getNumGames(self.board.board_fen()) < 5:
+            bestMove = await self.engine.play(self.board, chess.engine.Limit(time=0.1))
+            bestMove = bestMove.move
+            self.board.push(bestMove)
+            state = self.getState()
+            self.board.pop()
+            return (bestMove, state)
+        else:
+            white = self.board.turn
+            pre_position = self.board.board_fen()
+            topMoves = await self.engine.analyse(self.board, chess.engine.Limit(time=0.1) , multipv=3)
+            candidates = [move['pv'][0] for move in topMoves]
+            bestScore = -sys.maxsize
+            bestMove = None
+            for candidate in candidates:
+                self.board.push(candidate)
+                score = self.chess_db.getMoveScore(pre_position, self.board.board_fen(), white)
+                if score > bestScore:
+                    bestScore = score
+                    bestMove = candidate
+                self.board.pop()
+            self.board.push(bestMove)
+            state = self.getState()
+            self.board.pop()
+            return(bestMove, state)
 
     def getRandomMoveandState(self):
         randMove = random.choice(list(self.board.legal_moves))
@@ -87,3 +137,4 @@ class ChessEnv:
     
     async def tearDown(self):
         await self.engine.quit()
+        self.chess_db.tearDown()

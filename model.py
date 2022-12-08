@@ -12,11 +12,12 @@ from trainEnv import ChessEnv
 asyncio.set_event_loop_policy(chess.engine.EventLoopPolicy())
 
 class DQN:
-    def __init__(self):
-        return None
+    def __init__(self, pgnFiles, openingMoves):
+        self.pgnFiles = pgnFiles
+        self.openingMoves = openingMoves
 
     async def init(self) -> None:
-        self.env = ChessEnv()
+        self.env = ChessEnv(pgnFiles = self.pgnFiles, openingMoves=self.openingMoves)
         await self.env.init()
 
         ## TODO make this some sort of actual useful NN
@@ -59,7 +60,9 @@ class DQN:
 
 
 async def main() -> None:
-    learner = DQN()
+    pgnFiles = ['alekhine.pgn']
+    openingMoves = ['e4', 'Nf6']
+    learner = DQN(pgnFiles, openingMoves)
     await learner.init()
     await learner.train()
 
