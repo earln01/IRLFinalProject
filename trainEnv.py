@@ -73,9 +73,9 @@ class ChessEnv:
     def __init__(self, pgnFiles, openingMoves):
         self.board = chess.Board()
         self.openingMoves = openingMoves
-        self.board.reset()
         piece_types = ["P", "N", "B", "R", "Q", "K"]
         self.pieceVals = {piece_type: i+1 for i, piece_type in enumerate(piece_types)}
+        self.reset()
         self.chess_db = ChessDB()
         for file in pgnFiles:
             self.chess_db.PGNtoDB(file)

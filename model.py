@@ -26,7 +26,7 @@ class DQN:
 
         self.model.compile(optimizer='adam', loss='mse')
     
-    async def train(self, numEpisodes=1000, gamma=0.1, epsilon=0.1):
+    async def train(self, numEpisodes=5, gamma=0.1, epsilon=0.1):
         for episode in range(numEpisodes):
             state = self.env.reset()
             done=False
@@ -56,15 +56,19 @@ class DQN:
 
                 done = self.env.board.is_game_over()
         await self.env.tearDown()
-
+    
+    def saveModel(self, save_directory):
+        self.model.save(save_directory)
 
 
 async def main() -> None:
     pgnFiles = ['alekhine.pgn']
     openingMoves = ['e4', 'Nf6']
+    save_directory = 'testModel'
     learner = DQN(pgnFiles, openingMoves)
     await learner.init()
     await learner.train()
+    learner.saveModel(save_directory)
 
 if __name__ == '__main__':
     asyncio.run(main())
