@@ -21,15 +21,23 @@ class DQN:
         await self.env.init()
 
         ## TODO make this some sort of actual useful NN
-        self.model = tf.keras.models.Sequential()
-        self.model.add(tf.keras.layers.Dense(units=64, input_shape=(8,8,), activation='linear'))
+        self.model = tf.keras.Sequential([
+            tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu', input_shape=(8,8,1)),
+            tf.keras.layers.MaxPool2D(pool_size=2, strides=2),
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(units=256, activation='relu'),
+            tf.keras.layers.Dense(units=1, activation='linear')
+            ])
 
         self.model.compile(optimizer='adam', loss='mse')
     
-    async def train(self, numEpisodes=5, gamma=0.1, epsilon=0.1):
+    async def train(self, numEpisodes=100, gamma=0.1, epsilon=0.1):
         for episode in range(numEpisodes):
             state = self.env.reset()
             done=False
+            curReward = 0
+            white_reward = 0
+            black_reward = 0
             print(episode)
             while not done:
                 randMove, randState = self.env.getRandomMoveandState()
@@ -42,17 +50,25 @@ class DQN:
                     nextMove = randMove
                     nextState = randState
 
-                reward = 1 if nextMove==bestMove else -1
+                curReward = white_reward if self.env.board.turn else black_reward
 
                 # Calculate the target Q-value for the current state
-                target = reward + gamma * np.amax(self.model.predict(tf.convert_to_tensor([nextState])))
+                # target = curReward + gamma * np.amax(self.model.predict(tf.convert_to_tensor([nextState])))
 
                 # Update the model's Q-values for the current state
-                self.model.fit(tf.convert_to_tensor([state]), tf.expand_dims(tf.convert_to_tensor([target]),  axis=1), batch_size=1,verbose=0)
+
+                ## Supervised learning - map states to reward
+                # To switch back to Q learning - self.model.fit(tf.convert_to_tensor([state]), tf.expand_dims(tf.convert_to_tensor([target]),  axis=1), batch_size=1,verbose=0)
+                self.model.fit(tf.convert_to_tensor([state]), tf.expand_dims(tf.convert_to_tensor([curReward]),  axis=1), batch_size=1,verbose=0)
 
                 # Set the current state to the next state
                 self.env.playMove(nextMove)
                 state = nextState
+
+                reward = 1 if nextMove==bestMove else -1
+
+                white_reward = reward if self.env.board.turn else white_reward
+                black_reward = reward if not self.env.board.turn else black_reward
 
                 done = self.env.board.is_game_over()
         await self.env.tearDown()

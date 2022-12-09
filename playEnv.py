@@ -60,9 +60,12 @@ def main():
     openingMoves = ['e4', 'Nf6']
     modelDir = 'testModel'
     svgFile = 'result.svg'
+    moveList = openingMoves
     player = playEnv(openingMoves, modelDir)
     while not player.board.is_game_over():
-        print(player.playBestMove())
+        move = player.playBestMove()
+        moveList.append(move.uci())
+        print(moveList)
     
     boardSvg = chess.svg.board(player.board, size=350)
     with open(svgFile, 'w') as outfile:
