@@ -12,8 +12,9 @@ import time
 from trainEnv import ChessEnv
 
 class playEnv(ChessEnv):
-    def __init__(self, openingMoves, modelDir):
-        self.model = keras.models.load_model(modelDir)
+    def __init__(self, openingMoves, whiteModelDir, blackModelDir):
+        self.whiteModel = keras.models.load_model(whiteModelDir)
+        self.blackModel = keras.models.load_model(blackModelDir)
         self.board = chess.Board()
         self.openingMoves = openingMoves
         piece_types = ["P", "N", "B", "R", "Q", "K"]
@@ -39,13 +40,17 @@ class playEnv(ChessEnv):
     def getBestMove(self):
         bestMove = None
         bestScore = -sys.maxsize
+        
         for move in self.board.legal_moves:
             nextState = self.getResultingState(move)
             tensor = tf.convert_to_tensor([nextState])
-            score = np.amax(self.model.predict(tensor))
+            score = self.whiteModel.predict(tensor) if self.board.turn else self.blackModel.predict(tensor)
+            print(score)
+            score = np.amax(score)
             if  score > bestScore:
                 bestScore = score
                 bestMove = move
+                print(f'Move = {bestMove}, Score = {bestScore}')
         return bestMove
     
     def playBestMove(self):
@@ -58,14 +63,14 @@ class playEnv(ChessEnv):
 
 def main():
     openingMoves = ['e4', 'Nf6']
-    modelDir = 'testModel'
+    whiteModelDir = 'testModelWhite'
+    blackModelDir = 'testModelBlack'
     svgFile = 'result.svg'
     moveList = openingMoves
-    player = playEnv(openingMoves, modelDir)
+    player = playEnv(openingMoves, whiteModelDir, blackModelDir)
     while not player.board.is_game_over():
         move = player.playBestMove()
-        moveList.append(move.uci())
-        print(moveList)
+        print([move.uci() for move in player.board.move_stack])
     
     boardSvg = chess.svg.board(player.board, size=350)
     with open(svgFile, 'w') as outfile:

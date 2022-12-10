@@ -42,12 +42,12 @@ class ChessDB:
             positions.append(board.board_fen())
         return positions
     
-    def getMoveScore(self, pre_position, post_position, white=True):
+    def getMoveScore(self, pre_position, post_position, eval, white=True):
         winString = '1-0' if white else '0-1'
         loseString = '0-1' if white else '1-0'
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM games WHERE positions LIKE ?", ("%" + pre_position + "', '" +  post_position + "%",))
-        score = 0
+        score = eval
         games = 0
         
         for row in cursor:
@@ -58,7 +58,7 @@ class ChessDB:
             else:
                 score -= 100
             games += 1
-        score = score/games if games >= 5 else -200
+        score = score/games if games >= 5 else score-100
         return score
     
     def getNumGames(self, position):
@@ -100,37 +100,40 @@ class ChessEnv:
     
     async def getBestMoveandState(self):
         if self.chess_db.getNumGames(self.board.board_fen()) < 5:
-            bestMove = await self.engine.play(self.board, chess.engine.Limit(time=0.1))
-            bestMove = bestMove.move
+            bestMove = await self.engine.analyse(self.board, chess.engine.Limit(time=0.1))
+            eval = bestMove['score'].pov(self.board.turn).score(mate_score=1000000)
+            bestMove = bestMove['pv'][0]
             self.board.push(bestMove)
             state = self.getState()
             self.board.pop()
-            return (bestMove, state)
+            return (bestMove, state, eval)
         else:
             white = self.board.turn
             pre_position = self.board.board_fen()
             topMoves = await self.engine.analyse(self.board, chess.engine.Limit(time=0.1) , multipv=3)
-            candidates = [move['pv'][0] for move in topMoves]
+            candidates = [(move['pv'][0], move['score'].pov(self.board.turn).score(mate_score=1000))  for move in topMoves]
             bestScore = -sys.maxsize
             bestMove = None
             for candidate in candidates:
-                self.board.push(candidate)
-                score = self.chess_db.getMoveScore(pre_position, self.board.board_fen(), white)
+                self.board.push(candidate[0])
+                score = self.chess_db.getMoveScore(pre_position, self.board.board_fen(), candidate[1], white)
                 if score > bestScore:
                     bestScore = score
-                    bestMove = candidate
+                    bestMove = candidate[0]
                 self.board.pop()
             self.board.push(bestMove)
             state = self.getState()
             self.board.pop()
-            return(bestMove, state)
+            return(bestMove, state, bestScore)
 
-    def getRandomMoveandState(self):
+    async def getRandomMoveandState(self):
         randMove = random.choice(list(self.board.legal_moves))
         self.board.push(randMove)
+        moveAnalysis = await self.engine.analyse(self.board, chess.engine.Limit(time=0.1))
         state = self.getState()
         self.board.pop()
-        return(randMove, state)
+        eval = moveAnalysis['score'].pov(self.board.turn).score(mate_score=1000)
+        return(randMove, state, eval)
     
     def playMove(self, move):
         self.board.push(move)
